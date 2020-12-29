@@ -10,7 +10,16 @@ use std::path::PathBuf;
 use crate::arguments::Config;
 use crate::{HEADERS_REGEX, LINKS_REGEX, TAGS_REGEX};
 
+#[derive(sqlx::FromRow, Debug, Clone)]
+pub struct Zettel {
+    zettel_id: String,
+    title: String,
+    file_path: String,
+}
+
 pub mod initialize {
+    use std::fs::{self, Metadata};
+
     use super::*;
     pub async fn fill_db(
         conn: &mut SqliteConnection,
@@ -23,9 +32,17 @@ pub mod initialize {
             .collect();
         let zettels = dir_entries
             .par_iter()
-            .map(|e| gather_info(e, &config))
+            .map(|e| gather_info(e.clone().into_path(), e.metadata().unwrap(), &config))
             .filter_map(|e| e.ok())
             .collect::<Vec<_>>();
+        add_to_db(conn, zettels).await?;
+        Ok(())
+    }
+
+    async fn add_to_db(
+        conn: &mut SqliteConnection,
+        zettels: Vec<ParserGatherer>,
+    ) -> Result<(), anyhow::Error> {
         conn.execute("BEGIN").await?;
         let mut set = HashSet::new();
         for mut zettel in zettels {
@@ -83,12 +100,25 @@ pub mod initialize {
         Ok(())
     }
 
+    pub async fn fill_n(
+        conn: &mut SqliteConnection,
+        config: &Config,
+        paths: &[PathBuf],
+    ) -> Result<(), anyhow::Error> {
+        let zettels = paths
+            .par_iter()
+            .map(|path| gather_info(path.clone(), fs::metadata(path).unwrap(), &config))
+            .filter_map(|e| e.ok())
+            .collect::<Vec<_>>();
+        add_to_db(conn, zettels).await?;
+        Ok(())
+    }
+
     fn gather_info(
-        entry: &walkdir::DirEntry,
+        path: PathBuf,
+        metadata: Metadata,
         config: &Config,
     ) -> Result<ParserGatherer, anyhow::Error> {
-        let path = entry.path().to_path_buf();
-        let metadata = entry.metadata()?;
         let zettel_id: chrono::DateTime<Utc> = metadata.created()?.into();
         let zettel_id = zettel_id.format(&config.zettel_date_format).to_string();
         let mut content = String::new();
