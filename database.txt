@@ -1,0 +1,43 @@
+PRAGMA foreign_keys=on;
+PRAGMA WAL=on;
+
+DROP TABLE full_text;
+
+CREATE VIRTUAL TABLE full_text USING FTS5
+(zettel_id, body);
+
+DROP TABLE zettels;
+
+CREATE TABLE zettels
+(
+    zettel_id TEXT PRIMARY KEY,
+    title TEXT,
+    file_path TEXT NOT NULL
+);
+
+DROP TABLE headers;
+
+CREATE TABLE headers
+(
+    zettel_id TEXT NOT NULL,
+    level INTEGER NOT NULL,
+    text TEXT,
+    FOREIGN KEY (zettel_id) REFERENCES zettels(zettel_id)
+);
+
+DROP TABLE tags;
+
+CREATE TABLE tags
+(
+    zettel_id TEXT NOT NULL,
+    tag TEXT,
+    FOREIGN KEY (zettel_id) REFERENCES zettels(zettel_id)
+);
+
+CREATE TABLE links
+(
+    zettel_id TEXT NOT NULL,
+    link TEXT,
+    label TEXT,
+    FOREIGN KEY (zettel_id) REFERENCES zettels(zettel_id)
+);
