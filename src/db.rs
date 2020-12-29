@@ -1,5 +1,6 @@
 use chrono::prelude::*;
 use rayon::prelude::*;
+use serde::Serialize;
 use sqlx::{Executor, SqliteConnection};
 use std::collections::HashSet;
 use std::ffi::OsStr;
@@ -10,11 +11,11 @@ use std::path::PathBuf;
 use crate::arguments::Config;
 use crate::{HEADERS_REGEX, LINKS_REGEX, TAGS_REGEX};
 
-#[derive(sqlx::FromRow, Debug, Clone)]
+#[derive(sqlx::FromRow, Debug, Clone, Serialize)]
 pub struct Zettel {
-    zettel_id: String,
-    title: String,
-    file_path: String,
+    pub zettel_id: String,
+    pub title: String,
+    pub file_path: String,
 }
 
 pub mod initialize {

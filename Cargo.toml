@@ -10,12 +10,13 @@ version = "0.1.0"
 anyhow = "1.0"
 chrono = "0.4"
 clap = "3.0.0-beta.2"
+colored = "2"
 once_cell = "1.5"
-pulldown-cmark = "0.8"
 rayon = "1.5"
 regex = "*"
+serde_json = "*"
+toml = "0.5"
 walkdir = "2.3"
-toml = "0.5.8"
 
 [dependencies.sqlx]
 features = ["runtime-tokio-native-tls", "sqlite"]

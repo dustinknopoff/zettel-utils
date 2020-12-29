@@ -8,6 +8,8 @@ use std::path::Path;
 pub mod arguments;
 pub mod db;
 pub use db::initialize;
+pub mod output;
+use output::execute;
 
 static TAGS_REGEX: Lazy<regex::Regex> =
     Lazy::new(|| regex::Regex::new(r#"#[A-Za-z0-9-._]+"#).unwrap());
@@ -21,12 +23,6 @@ static HEADERS_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
 });
 
 // TODO:
-// - Config file with: date format for id, wiki location, format to receive links, what to call to open files
-// - Add clap and provide calls in for creating DB, updating DB, searching
-// - Search:
-// - Fulltext
-// - Tag
-// - Has link to received path
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -64,19 +60,19 @@ async fn main() -> Result<(), anyhow::Error> {
             let zettels = sqlx::query_as::<_, Zettel>("SELECT z.zettel_id, title, file_path FROM full_text ft JOIN zettels z ON z.zettel_id = ft.zettel_id WHERE full_text MATCH ?")
             .bind(&s.text)
             .fetch_all(&mut conn);
-            dbg!(&zettels.await?);
+            execute(zettels.await?, &opts.format)?;
         }
         SubCommand::Tags(ref s) => {
             let zettels = sqlx::query_as::<_, Zettel>("SELECT z.zettel_id, title, file_path FROM tags t JOIN zettels z ON z.zettel_id = t.zettel_id WHERE tag LIKE ?;")
             .bind(format!("%{}%",&s.text))
             .fetch_all(&mut conn);
-            dbg!(&zettels.await?);
+            execute(zettels.await?, &opts.format)?;
         }
         SubCommand::Links(ref s) => {
             let zettels = sqlx::query_as::<_, Zettel>("SELECT DISTINCT z.zettel_id, title, file_path FROM links l JOIN zettels z ON z.zettel_id = l.zettel_id WHERE link LIKE ?;")
             .bind(format!("%{}%",&s.text))
             .fetch_all(&mut conn);
-            dbg!(&zettels.await?);
+            execute(zettels.await?, &opts.format)?;
         }
         SubCommand::Update(ref u) => {
             if u.all {
