@@ -19,9 +19,10 @@ pub struct Zettel {
 }
 
 /// Functions for initializing and updating a Zettel Database
-pub mod initialize {
+pub mod edit {
     use super::*;
     use std::fs::{self, Metadata};
+    use std::path::Path;
     /// Walk [config.wiki_location](crate::arguments::Config) for markdown files and add metadata to database.
     pub async fn fill_db(
         conn: &mut SqliteConnection,
@@ -251,6 +252,129 @@ PRAGMA WAL=on;",
         /// (Label, URL)
         links: Vec<(String, String)>,
         tags: Vec<String>,
+    }
+
+    /// Update a zettel when notified of a file name change
+    pub async fn namechange(
+        conn: &mut SqliteConnection,
+        config: &Config,
+        old: &Path,
+        new: &Path,
+    ) -> Result<(), anyhow::Error> {
+        let maybe_id = {
+            let meta = fs::metadata(old)?;
+            let zettel_id: chrono::DateTime<Utc> = meta.created()?.into();
+            zettel_id.format(&config.zettel_date_format).to_string()
+        };
+        let new_id = {
+            let meta = fs::metadata(new)?;
+            let zettel_id: chrono::DateTime<Utc> = meta.created()?.into();
+            zettel_id.format(&config.zettel_date_format).to_string()
+        };
+        conn.execute(
+            sqlx::query_as::<_, Zettel>(
+                "UPDATE zettels SET zettel_id = ?, title = ? WHERE zettel_id = ? OR zettel_id = ?",
+            )
+            .bind(&new_id)
+            .bind(new.file_name().unwrap().to_str())
+            .bind(old.file_name().unwrap().to_str())
+            .bind(&maybe_id),
+        )
+        .await?;
+        conn.execute(
+            sqlx::query_as::<_, Zettel>(
+                "UPDATE full_text SET zettel_id = ? WHERE zettel_id = ? OR zettel_id = ?",
+            )
+            .bind(&new_id)
+            .bind(old.file_name().unwrap().to_str())
+            .bind(&maybe_id),
+        )
+        .await?;
+        conn.execute(
+            sqlx::query_as::<_, Zettel>(
+                "UPDATE headers SET zettel_id = ?, title = ? WHERE zettel_id = ? OR zettel_id = ?",
+            )
+            .bind(&new_id)
+            .bind(new.file_name().unwrap().to_str())
+            .bind(old.file_name().unwrap().to_str())
+            .bind(&maybe_id),
+        )
+        .await?;
+        conn.execute(
+            sqlx::query_as::<_, Zettel>(
+                "UPDATE links SET zettel_id = ?, title = ? WHERE zettel_id = ? OR zettel_id = ?",
+            )
+            .bind(&new_id)
+            .bind(new.file_name().unwrap().to_str())
+            .bind(old.file_name().unwrap().to_str())
+            .bind(&maybe_id),
+        )
+        .await?;
+        conn.execute(
+            sqlx::query_as::<_, Zettel>(
+                "UPDATE tags SET zettel_id = ?, title = ? WHERE zettel_id = ? OR zettel_id = ?",
+            )
+            .bind(&new_id)
+            .bind(new.file_name().unwrap().to_str())
+            .bind(old.file_name().unwrap().to_str())
+            .bind(&maybe_id),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Update a zettel when notified of a file name change
+    pub async fn remove(
+        conn: &mut SqliteConnection,
+        config: &Config,
+        old: &Path,
+    ) -> Result<(), anyhow::Error> {
+        let maybe_id = {
+            let meta = fs::metadata(old)?;
+            let zettel_id: chrono::DateTime<Utc> = meta.created()?.into();
+            zettel_id.format(&config.zettel_date_format).to_string()
+        };
+        conn.execute(
+            sqlx::query_as::<_, Zettel>(
+                "DROP FROM TABLE zettels WHERE zettel_id = ? OR zettel_id = ?",
+            )
+            .bind(old.file_name().unwrap().to_str())
+            .bind(&maybe_id),
+        )
+        .await?;
+        conn.execute(
+            sqlx::query_as::<_, Zettel>(
+                "DROP FROM TABLE headers WHERE zettel_id = ? OR zettel_id = ?",
+            )
+            .bind(old.file_name().unwrap().to_str())
+            .bind(&maybe_id),
+        )
+        .await?;
+        conn.execute(
+            sqlx::query_as::<_, Zettel>(
+                "DROP FROM TABLE links WHERE zettel_id = ? OR zettel_id = ?",
+            )
+            .bind(old.file_name().unwrap().to_str())
+            .bind(&maybe_id),
+        )
+        .await?;
+        conn.execute(
+            sqlx::query_as::<_, Zettel>(
+                "DROP FROM TABLE tags WHERE zettel_id = ? OR zettel_id = ?",
+            )
+            .bind(old.file_name().unwrap().to_str())
+            .bind(&maybe_id),
+        )
+        .await?;
+        conn.execute(
+            sqlx::query_as::<_, Zettel>(
+                "DROP FROM TABLE full_text WHERE zettel_id = ? OR zettel_id = ?",
+            )
+            .bind(old.file_name().unwrap().to_str())
+            .bind(&maybe_id),
+        )
+        .await?;
+        Ok(())
     }
 }
 

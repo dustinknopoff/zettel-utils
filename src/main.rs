@@ -2,6 +2,7 @@ use arguments::{Config, Opts, SubCommand};
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use once_cell::sync::Lazy;
 use sqlx::{Connection, SqliteConnection};
+use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::path::Path;
 use std::sync::mpsc::channel;
@@ -11,7 +12,7 @@ use std::time::Duration;
 pub mod arguments;
 /// CRUD ops for database
 pub mod db;
-use db::{initialize, query};
+use db::{edit, query};
 /// Write out results
 pub mod output;
 use output::execute;
@@ -54,13 +55,13 @@ async fn main() -> Result<(), anyhow::Error> {
     }
     let mut conn = SqliteConnection::connect("zettel.db").await?;
     if should_initialize {
-        initialize::initialize_db(&mut conn).await?;
-        initialize::fill_db(&mut conn, &config).await?;
+        edit::initialize_db(&mut conn).await?;
+        edit::fill_db(&mut conn, &config).await?;
     }
     // If the DB didn't exist, we NEED to run create first
     match opts.subcmd {
         SubCommand::Create if !should_initialize => {
-            initialize::fill_db(&mut conn, &config).await?;
+            edit::fill_db(&mut conn, &config).await?;
         }
         SubCommand::FullText(ref s) => {
             let zettels = query::fulltext(&mut conn, &s.text).await?;
@@ -76,9 +77,9 @@ async fn main() -> Result<(), anyhow::Error> {
         }
         SubCommand::Update(ref u) => {
             if u.all {
-                initialize::fill_db(&mut conn, &config).await?;
+                edit::fill_db(&mut conn, &config).await?;
             } else {
-                initialize::fill_n(&mut conn, &config, &u.paths).await?;
+                edit::fill_n(&mut conn, &config, &u.paths).await?;
             }
         }
         SubCommand::Create => return Ok(()),
@@ -98,13 +99,26 @@ async fn main() -> Result<(), anyhow::Error> {
 
             loop {
                 match rx.recv() {
-                    Ok(DebouncedEvent::Write(path)) => {
-                        initialize::fill_n(&mut conn, &config, &[path]).await?;
+                    Ok(DebouncedEvent::Write(path))
+                        if path.extension() == Some(OsStr::new("mds")) =>
+                    {
+                        edit::fill_n(&mut conn, &config, &[path]).await?;
                     }
-                    Ok(DebouncedEvent::NoticeWrite(path)) => {
-                        initialize::fill_n(&mut conn, &config, &[path]).await?;
+                    Ok(DebouncedEvent::NoticeWrite(path))
+                        if path.extension() == Some(OsStr::new("mds")) =>
+                    {
+                        edit::fill_n(&mut conn, &config, &[path]).await?;
                     }
-                    // TODO: Implement name change and deletion handling
+                    Ok(DebouncedEvent::Remove(old))
+                        if old.extension() == Some(OsStr::new("mds")) =>
+                    {
+                        edit::remove(&mut conn, &config, &old).await?;
+                    }
+                    Ok(DebouncedEvent::Rename(old, new))
+                        if old.extension() == Some(OsStr::new("mds")) =>
+                    {
+                        edit::namechange(&mut conn, &config, &old, &new).await?;
+                    }
                     Ok(event) => println!("{:?}", event),
                     Err(e) => println!("watch error: {:?}", e),
                 }
