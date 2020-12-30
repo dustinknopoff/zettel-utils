@@ -1,8 +1,11 @@
 [package]
 authors = ["Dustin Knopoff <rust@knopoff.dev>"]
 edition = "2018"
+keywords = ["zettelkasten", "cli", "utilities"]
+license = "MIT"
 name = "zettel-utils"
 version = "0.1.0"
+include = ["src/**/*", "LICENSE", "README.md"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
