@@ -1,8 +1,11 @@
 use arguments::{Config, Opts, SubCommand};
+use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use once_cell::sync::Lazy;
 use sqlx::{Connection, SqliteConnection};
 use std::fs::{self, File};
 use std::path::Path;
+use std::sync::mpsc::channel;
+use std::time::Duration;
 
 /// Command line arguments and Configuration file formats
 pub mod arguments;
@@ -79,6 +82,34 @@ async fn main() -> Result<(), anyhow::Error> {
             }
         }
         SubCommand::Create => return Ok(()),
+        SubCommand::Watch => loop {
+            // Create a channel to receive the events.
+            let (tx, rx) = channel();
+
+            // Create a watcher object, delivering debounced events.
+            // The notification back-end is selected based on the platform.
+            let mut watcher = watcher(tx, Duration::from_secs(10)).unwrap();
+
+            // Add a path to be watched. All files and directories at that path and
+            // below will be monitored for changes.
+            watcher
+                .watch(&config.wiki_location, RecursiveMode::Recursive)
+                .unwrap();
+
+            loop {
+                match rx.recv() {
+                    Ok(DebouncedEvent::Write(path)) => {
+                        initialize::fill_n(&mut conn, &config, &[path]).await?;
+                    }
+                    Ok(DebouncedEvent::NoticeWrite(path)) => {
+                        initialize::fill_n(&mut conn, &config, &[path]).await?;
+                    }
+                    // TODO: Implement name change and deletion handling
+                    Ok(event) => println!("{:?}", event),
+                    Err(e) => println!("watch error: {:?}", e),
+                }
+            }
+        },
     }
 
     Ok(())

@@ -56,6 +56,8 @@ pub enum SubCommand {
     Create,
     /// Update all or some of the database
     Update(Update),
+    /// Setup a notifier to update the database on file changes
+    Watch,
 }
 
 #[derive(Clap, Debug)]

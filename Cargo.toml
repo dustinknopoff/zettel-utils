@@ -1,11 +1,11 @@
 [package]
 authors = ["Dustin Knopoff <rust@knopoff.dev>"]
 edition = "2018"
+include = ["src/**/*", "LICENSE", "README.md"]
 keywords = ["zettelkasten", "cli", "utilities"]
 license = "MIT"
 name = "zettel-utils"
 version = "0.1.0"
-include = ["src/**/*", "LICENSE", "README.md"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,6 +20,9 @@ regex = "*"
 serde_json = "*"
 toml = "0.5"
 walkdir = "2.3"
+
+[dependencies.notify]
+version = "4.0"
 
 [dependencies.sqlx]
 features = ["runtime-tokio-native-tls", "sqlite"]
