@@ -100,22 +100,22 @@ async fn main() -> Result<(), anyhow::Error> {
             loop {
                 match rx.recv() {
                     Ok(DebouncedEvent::Write(path))
-                        if path.extension() == Some(OsStr::new("mds")) =>
+                        if path.extension() == Some(OsStr::new("md")) =>
                     {
                         edit::fill_n(&mut conn, &config, &[path]).await?;
                     }
                     Ok(DebouncedEvent::NoticeWrite(path))
-                        if path.extension() == Some(OsStr::new("mds")) =>
+                        if path.extension() == Some(OsStr::new("md")) =>
                     {
                         edit::fill_n(&mut conn, &config, &[path]).await?;
                     }
                     Ok(DebouncedEvent::Remove(old))
-                        if old.extension() == Some(OsStr::new("mds")) =>
+                        if old.extension() == Some(OsStr::new("md")) =>
                     {
                         edit::remove(&mut conn, &config, &old).await?;
                     }
                     Ok(DebouncedEvent::Rename(old, new))
-                        if old.extension() == Some(OsStr::new("mds")) =>
+                        if old.extension() == Some(OsStr::new("md")) =>
                     {
                         edit::namechange(&mut conn, &config, &old, &new).await?;
                     }
