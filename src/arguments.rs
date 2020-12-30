@@ -5,8 +5,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 #[derive(Clap, Debug)]
-#[clap(name = "agnotestic-cli", version = "0.1")]
+#[clap(version = "0.1", author = "Dustin Knopoff <rust@knopoff.dev>")]
 pub struct Opts {
+    /// One of stdout, alfred, or json
     #[clap(default_value = "stdout")]
     pub format: OutFormat,
     #[clap(subcommand)]
@@ -65,7 +66,7 @@ pub struct Search {
 #[derive(Clap, Debug)]
 pub struct Update {
     /// Toggle to just UPSERT all wiki files
-    #[clap(short)]
+    #[clap(short, long)]
     pub all: bool,
     /// List of files that needed to be updated in database
     #[clap(long, short)]

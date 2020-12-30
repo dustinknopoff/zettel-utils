@@ -1,13 +1,15 @@
 use arguments::{Config, Opts, SubCommand};
-use db::Zettel;
 use once_cell::sync::Lazy;
 use sqlx::{Connection, SqliteConnection};
 use std::fs::{self, File};
 use std::path::Path;
 
+/// Command line arguments and Configuration file formats
 pub mod arguments;
+/// CRUD ops for database
 pub mod db;
-pub use db::initialize;
+use db::{initialize, query};
+/// Write out results
 pub mod output;
 use output::execute;
 
@@ -23,6 +25,7 @@ static HEADERS_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
 });
 
 // TODO:
+// Move queries into lib functions
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -57,22 +60,16 @@ async fn main() -> Result<(), anyhow::Error> {
             initialize::fill_db(&mut conn, &config).await?;
         }
         SubCommand::FullText(ref s) => {
-            let zettels = sqlx::query_as::<_, Zettel>("SELECT z.zettel_id, title, file_path FROM full_text ft JOIN zettels z ON z.zettel_id = ft.zettel_id WHERE full_text MATCH ?")
-            .bind(&s.text)
-            .fetch_all(&mut conn);
-            execute(zettels.await?, &opts.format)?;
+            let zettels = query::fulltext(&mut conn, &s.text).await?;
+            execute(zettels, &opts.format)?;
         }
         SubCommand::Tags(ref s) => {
-            let zettels = sqlx::query_as::<_, Zettel>("SELECT z.zettel_id, title, file_path FROM tags t JOIN zettels z ON z.zettel_id = t.zettel_id WHERE tag LIKE ?;")
-            .bind(format!("%{}%",&s.text))
-            .fetch_all(&mut conn);
-            execute(zettels.await?, &opts.format)?;
+            let zettels = query::tags(&mut conn, &s.text).await?;
+            execute(zettels, &opts.format)?;
         }
         SubCommand::Links(ref s) => {
-            let zettels = sqlx::query_as::<_, Zettel>("SELECT DISTINCT z.zettel_id, title, file_path FROM links l JOIN zettels z ON z.zettel_id = l.zettel_id WHERE link LIKE ?;")
-            .bind(format!("%{}%",&s.text))
-            .fetch_all(&mut conn);
-            execute(zettels.await?, &opts.format)?;
+            let zettels = query::links(&mut conn, &s.text).await?;
+            execute(zettels, &opts.format)?;
         }
         SubCommand::Update(ref u) => {
             if u.all {
