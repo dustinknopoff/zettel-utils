@@ -367,7 +367,7 @@ pub mod query {
         conn: &mut SqliteConnection,
         text: &str,
     ) -> Result<Vec<Zettel>, anyhow::Error> {
-        Ok(sqlx::query_as::<_, Zettel>("SELECT z.zettel_id, title, file_path FROM full_text ft JOIN zettels z ON z.zettel_id = ft.zettel_id WHERE full_text MATCH ?")
+        Ok(sqlx::query_as::<_, Zettel>("SELECT z.zettel_id, title, timestamp, file_path FROM full_text ft JOIN zettels z ON z.zettel_id = ft.zettel_id WHERE full_text MATCH ?")
             .bind(text)
             .fetch_all( conn).await?)
     }
@@ -377,7 +377,7 @@ pub mod query {
         conn: &mut SqliteConnection,
         text: &str,
     ) -> Result<Vec<Zettel>, anyhow::Error> {
-        Ok(sqlx::query_as::<_, Zettel>("SELECT DISTINCT z.zettel_id, title, file_path FROM links l JOIN zettels z ON z.zettel_id = l.zettel_id WHERE link LIKE ?;")
+        Ok(sqlx::query_as::<_, Zettel>("SELECT DISTINCT z.zettel_id, title, timestamp, file_path FROM links l JOIN zettels z ON z.zettel_id = l.zettel_id WHERE link LIKE ?;")
             .bind(format!("%{}%",text))
             .fetch_all( conn).await?)
     }
@@ -387,7 +387,7 @@ pub mod query {
         conn: &mut SqliteConnection,
         text: &str,
     ) -> Result<Vec<Zettel>, anyhow::Error> {
-        Ok(sqlx::query_as::<_, Zettel>("SELECT z.zettel_id, title, file_path FROM tags t JOIN zettels z ON z.zettel_id = t.zettel_id WHERE tag LIKE ?;")
+        Ok(sqlx::query_as::<_, Zettel>("SELECT z.zettel_id, title, timestamp, file_path FROM tags t JOIN zettels z ON z.zettel_id = t.zettel_id WHERE tag LIKE ?;")
             .bind(format!("%{}%",text))
             .fetch_all( conn).await?)
     }
