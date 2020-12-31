@@ -58,7 +58,7 @@ async fn main() -> Result<(), anyhow::Error> {
         edit::initialize_db(&mut conn).await?;
         edit::fill_db(&mut conn, &config, None).await?;
     }
-    if opts.calculate {
+    if !should_initialize && opts.calculate {
         use chrono::prelude::*;
         let timestamp = {
             let as_str = query::latest_zettel(&mut conn).await?.timestamp;
