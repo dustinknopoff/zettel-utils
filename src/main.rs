@@ -56,12 +56,20 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut conn = SqliteConnection::connect("zettel.db").await?;
     if should_initialize {
         edit::initialize_db(&mut conn).await?;
-        edit::fill_db(&mut conn, &config).await?;
+        edit::fill_db(&mut conn, &config, None).await?;
+    }
+    if opts.calculate {
+        use chrono::prelude::*;
+        let timestamp = {
+            let as_str = query::latest_zettel(&mut conn).await?.timestamp;
+            Utc.timestamp(as_str, 0)
+        };
+        edit::fill_db(&mut conn, &config, Some(timestamp)).await?;
     }
     // If the DB didn't exist, we NEED to run create first
     match opts.subcmd {
         SubCommand::Create if !should_initialize => {
-            edit::fill_db(&mut conn, &config).await?;
+            edit::fill_db(&mut conn, &config, None).await?;
         }
         SubCommand::FullText(ref s) => {
             let zettels = query::fulltext(&mut conn, &s.text).await?;
@@ -77,9 +85,16 @@ async fn main() -> Result<(), anyhow::Error> {
         }
         SubCommand::Update(ref u) => {
             if u.all {
-                edit::fill_db(&mut conn, &config).await?;
+                use chrono::prelude::*;
+                let after: Option<DateTime<Utc>> = if u.calculate {
+                    let as_str = query::latest_zettel(&mut conn).await?.timestamp;
+                    Some(Utc.timestamp(as_str, 0))
+                } else {
+                    None
+                };
+                edit::fill_db(&mut conn, &config, after).await?;
             } else {
-                edit::fill_n(&mut conn, &config, &u.paths).await?;
+                edit::fill_n(&mut conn, &u.paths).await?;
             }
         }
         SubCommand::Create => return Ok(()),
@@ -102,22 +117,22 @@ async fn main() -> Result<(), anyhow::Error> {
                     Ok(DebouncedEvent::Write(path))
                         if path.extension() == Some(OsStr::new("md")) =>
                     {
-                        edit::fill_n(&mut conn, &config, &[path]).await?;
+                        edit::fill_n(&mut conn, &[path]).await?;
                     }
                     Ok(DebouncedEvent::NoticeWrite(path))
                         if path.extension() == Some(OsStr::new("md")) =>
                     {
-                        edit::fill_n(&mut conn, &config, &[path]).await?;
+                        edit::fill_n(&mut conn, &[path]).await?;
                     }
                     Ok(DebouncedEvent::Remove(old))
                         if old.extension() == Some(OsStr::new("md")) =>
                     {
-                        edit::remove(&mut conn, &config, &old).await?;
+                        edit::remove(&mut conn, &old).await?;
                     }
                     Ok(DebouncedEvent::Rename(old, new))
                         if old.extension() == Some(OsStr::new("md")) =>
                     {
-                        edit::namechange(&mut conn, &config, &old, &new).await?;
+                        edit::namechange(&mut conn, &old, &new).await?;
                     }
                     Ok(event) => println!("{:?}", event),
                     Err(e) => println!("watch error: {:?}", e),

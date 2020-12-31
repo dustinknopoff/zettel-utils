@@ -11,6 +11,7 @@ DROP TABLE zettels;
 CREATE TABLE zettels
 (
     zettel_id TEXT PRIMARY KEY,
+    timestamp TEXT,
     title TEXT,
     file_path TEXT NOT NULL
 );

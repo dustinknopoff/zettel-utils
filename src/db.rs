@@ -2,7 +2,6 @@ use chrono::prelude::*;
 use rayon::prelude::*;
 use serde::Serialize;
 use sqlx::{Executor, SqliteConnection};
-use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Read;
@@ -14,6 +13,7 @@ use crate::{HEADERS_REGEX, LINKS_REGEX, TAGS_REGEX};
 #[derive(sqlx::FromRow, Debug, Clone, Serialize)]
 pub struct Zettel {
     pub zettel_id: String,
+    pub timestamp: i64,
     pub title: String,
     pub file_path: String,
 }
@@ -23,23 +23,36 @@ pub mod edit {
     use super::*;
     use std::fs::{self, Metadata};
     use std::path::Path;
+    use walkdir::DirEntry;
     /// Walk [config.wiki_location](crate::arguments::Config) for markdown files and add metadata to database.
     pub async fn fill_db(
         conn: &mut SqliteConnection,
         config: &Config,
+        after: Option<DateTime<Utc>>,
     ) -> Result<(), anyhow::Error> {
         let dir_entries: Vec<_> = walkdir::WalkDir::new(config.wiki_location.as_path())
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| e.path().extension() == Some(OsStr::new("md")))
+            .filter(|e| {
+                if let Some(after) = after {
+                    created(e).unwrap() > after
+                } else {
+                    true
+                }
+            })
             .collect();
         let zettels = dir_entries
             .par_iter()
-            .map(|e| gather_info(e.clone().into_path(), e.metadata().unwrap(), &config))
+            .map(|e| gather_info(e.clone().into_path(), e.metadata().unwrap()))
             .filter_map(|e| e.ok())
             .collect::<Vec<_>>();
         add_to_db(conn, zettels).await?;
         Ok(())
+    }
+
+    fn created(e: &DirEntry) -> Result<DateTime<Utc>, anyhow::Error> {
+        Ok(Into::<DateTime<Utc>>::into(e.metadata()?.created()?))
     }
 
     /// For any given Zettel, insert the following:
@@ -50,23 +63,12 @@ pub mod edit {
     /// - Extracted headers into the headers table
     /// - High level metadata of zettels into the zettels table.
     ///
-    /// **NOTE**: In the case of duplicate `zettel_ids` the basename of the file will be used
     async fn add_to_db(
         conn: &mut SqliteConnection,
         zettels: Vec<ParserGatherer>,
     ) -> Result<(), anyhow::Error> {
         conn.execute("BEGIN").await?;
-        let mut set = HashSet::new();
-        for mut zettel in zettels {
-            if set.contains(&zettel.zettel_id) {
-                zettel.zettel_id = zettel
-                    .path
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_string();
-            }
+        for zettel in zettels {
             conn.execute(
                 sqlx::query("INSERT OR REPLACE INTO full_text VALUES(?,?);")
                     .bind(&zettel.zettel_id)
@@ -74,8 +76,9 @@ pub mod edit {
             )
             .await?;
             conn.execute(
-                sqlx::query("INSERT OR REPLACE INTO zettels VALUES(?,?,?);")
+                sqlx::query("INSERT OR REPLACE INTO zettels VALUES(?,?,?,?);")
                     .bind(&zettel.zettel_id)
+                    .bind(&zettel.timestamp)
                     .bind(&zettel.title)
                     .bind(&zettel.path.to_str()),
             )
@@ -106,7 +109,6 @@ pub mod edit {
                 )
                 .await?;
             }
-            set.insert(zettel.zettel_id);
         }
         conn.execute("COMMIT").await?;
         Ok(())
@@ -115,12 +117,11 @@ pub mod edit {
     /// Incredibly similar to [fill_db](crate::db::initialize::fill_db) except that it operates on a received list of Paths rather than walking the config path for markdown files
     pub async fn fill_n(
         conn: &mut SqliteConnection,
-        config: &Config,
         paths: &[PathBuf],
     ) -> Result<(), anyhow::Error> {
         let zettels = paths
             .par_iter()
-            .map(|path| gather_info(path.clone(), fs::metadata(path).unwrap(), &config))
+            .map(|path| gather_info(path.clone(), fs::metadata(path).unwrap()))
             .filter_map(|e| e.ok())
             .collect::<Vec<_>>();
         add_to_db(conn, zettels).await?;
@@ -134,16 +135,16 @@ pub mod edit {
     /// - list of tags
     /// - list of links
     /// - list of headers
-    fn gather_info(
-        path: PathBuf,
-        metadata: Metadata,
-        config: &Config,
-    ) -> Result<ParserGatherer, anyhow::Error> {
-        let zettel_id: chrono::DateTime<Utc> = metadata.created()?.into();
-        let zettel_id = zettel_id.format(&config.zettel_date_format).to_string();
+    fn gather_info(path: PathBuf, metadata: Metadata) -> Result<ParserGatherer, anyhow::Error> {
+        let timestamp: chrono::DateTime<Utc> = metadata.created()?.into();
+        let timestamp = timestamp.timestamp();
         let mut content = String::new();
         let mut file = File::open(&path)?;
         file.read_to_string(&mut content)?;
+        let zettel_id = blake3::hash(&content.as_bytes())
+            .to_hex()
+            .as_str()
+            .to_string();
         let tags = TAGS_REGEX
             .captures_iter(&content)
             .filter_map(|v| v.get(0))
@@ -179,6 +180,7 @@ pub mod edit {
         Ok(ParserGatherer {
             text: content,
             path,
+            timestamp,
             zettel_id,
             headers,
             tags,
@@ -203,6 +205,7 @@ PRAGMA WAL=on;",
             "CREATE TABLE zettels
 (
     zettel_id TEXT UNIQUE PRIMARY KEY,
+    timestamp INTEGER,
     title TEXT,
     file_path TEXT NOT NULL
 );",
@@ -246,6 +249,7 @@ PRAGMA WAL=on;",
         title: String,
         text: String,
         path: PathBuf,
+        timestamp: i64,
         zettel_id: String,
         /// (Header Level, Text)
         headers: Vec<(i32, String)>,
@@ -257,121 +261,98 @@ PRAGMA WAL=on;",
     /// Update a zettel when notified of a file name change
     pub async fn namechange(
         conn: &mut SqliteConnection,
-        config: &Config,
         old: &Path,
         new: &Path,
     ) -> Result<(), anyhow::Error> {
-        let maybe_id = {
-            let meta = fs::metadata(old)?;
-            let zettel_id: chrono::DateTime<Utc> = meta.created()?.into();
-            zettel_id.format(&config.zettel_date_format).to_string()
-        };
-        let new_id = {
+        let id = query::get_by_path(conn, old.to_str().unwrap())
+            .await?
+            .zettel_id;
+        let new_timestamp = {
             let meta = fs::metadata(new)?;
-            let zettel_id: chrono::DateTime<Utc> = meta.created()?.into();
-            zettel_id.format(&config.zettel_date_format).to_string()
+            let ts: chrono::DateTime<Utc> = meta.created()?.into();
+            ts.timestamp()
         };
         conn.execute(
             sqlx::query_as::<_, Zettel>(
-                "UPDATE zettels SET zettel_id = ?, title = ? WHERE zettel_id = ? OR zettel_id = ?",
+                "UPDATE zettels SET timestamp = ?, title = ? WHERE zettel_id = ?",
             )
-            .bind(&new_id)
+            .bind(&new_timestamp)
             .bind(new.file_name().unwrap().to_str())
             .bind(old.file_name().unwrap().to_str())
-            .bind(&maybe_id),
+            .bind(&id),
+        )
+        .await?;
+        conn.execute(
+            sqlx::query_as::<_, Zettel>("UPDATE full_text SET timestamp = ? WHERE zettel_id = ?")
+                .bind(&new_timestamp)
+                .bind(old.file_name().unwrap().to_str())
+                .bind(&id),
         )
         .await?;
         conn.execute(
             sqlx::query_as::<_, Zettel>(
-                "UPDATE full_text SET zettel_id = ? WHERE zettel_id = ? OR zettel_id = ?",
+                "UPDATE headers SET timestamp = ?, title = ? zettel_id = ?",
             )
-            .bind(&new_id)
-            .bind(old.file_name().unwrap().to_str())
-            .bind(&maybe_id),
+            .bind(&new_timestamp)
+            .bind(new.file_name().unwrap().to_str())
+            .bind(&id),
         )
         .await?;
         conn.execute(
             sqlx::query_as::<_, Zettel>(
-                "UPDATE headers SET zettel_id = ?, title = ? WHERE zettel_id = ? OR zettel_id = ?",
+                "UPDATE links SET timestamp = ?, title = ? WHERE zettel_id = ?",
             )
-            .bind(&new_id)
+            .bind(&new_timestamp)
             .bind(new.file_name().unwrap().to_str())
             .bind(old.file_name().unwrap().to_str())
-            .bind(&maybe_id),
+            .bind(&id),
         )
         .await?;
         conn.execute(
             sqlx::query_as::<_, Zettel>(
-                "UPDATE links SET zettel_id = ?, title = ? WHERE zettel_id = ? OR zettel_id = ?",
+                "UPDATE tags SET timestamp = ?, title = ? WHERE zettel_id = ?",
             )
-            .bind(&new_id)
+            .bind(&new_timestamp)
             .bind(new.file_name().unwrap().to_str())
-            .bind(old.file_name().unwrap().to_str())
-            .bind(&maybe_id),
-        )
-        .await?;
-        conn.execute(
-            sqlx::query_as::<_, Zettel>(
-                "UPDATE tags SET zettel_id = ?, title = ? WHERE zettel_id = ? OR zettel_id = ?",
-            )
-            .bind(&new_id)
-            .bind(new.file_name().unwrap().to_str())
-            .bind(old.file_name().unwrap().to_str())
-            .bind(&maybe_id),
+            .bind(&id),
         )
         .await?;
         Ok(())
     }
 
     /// Update a zettel when notified of a file name change
-    pub async fn remove(
-        conn: &mut SqliteConnection,
-        config: &Config,
-        old: &Path,
-    ) -> Result<(), anyhow::Error> {
-        let maybe_id = {
-            let meta = fs::metadata(old)?;
-            let zettel_id: chrono::DateTime<Utc> = meta.created()?.into();
-            zettel_id.format(&config.zettel_date_format).to_string()
-        };
+    pub async fn remove(conn: &mut SqliteConnection, old: &Path) -> Result<(), anyhow::Error> {
+        let id = query::get_by_path(conn, old.to_str().unwrap())
+            .await?
+            .zettel_id;
         conn.execute(
-            sqlx::query_as::<_, Zettel>(
-                "DROP FROM TABLE zettels WHERE zettel_id = ? OR zettel_id = ?",
-            )
-            .bind(old.file_name().unwrap().to_str())
-            .bind(&maybe_id),
+            sqlx::query_as::<_, Zettel>("DROP FROM TABLE zettels WHERE zettel_id = ? ")
+                .bind(old.file_name().unwrap().to_str())
+                .bind(&id),
         )
         .await?;
         conn.execute(
-            sqlx::query_as::<_, Zettel>(
-                "DROP FROM TABLE headers WHERE zettel_id = ? OR zettel_id = ?",
-            )
-            .bind(old.file_name().unwrap().to_str())
-            .bind(&maybe_id),
+            sqlx::query_as::<_, Zettel>("DROP FROM TABLE headers WHERE zettel_id = ?")
+                .bind(old.file_name().unwrap().to_str())
+                .bind(&id),
         )
         .await?;
         conn.execute(
-            sqlx::query_as::<_, Zettel>(
-                "DROP FROM TABLE links WHERE zettel_id = ? OR zettel_id = ?",
-            )
-            .bind(old.file_name().unwrap().to_str())
-            .bind(&maybe_id),
+            sqlx::query_as::<_, Zettel>("DROP FROM TABLE links WHERE zettel_id = ?")
+                .bind(old.file_name().unwrap().to_str())
+                .bind(&id),
         )
         .await?;
         conn.execute(
-            sqlx::query_as::<_, Zettel>(
-                "DROP FROM TABLE tags WHERE zettel_id = ? OR zettel_id = ?",
-            )
-            .bind(old.file_name().unwrap().to_str())
-            .bind(&maybe_id),
+            sqlx::query_as::<_, Zettel>("DROP FROM TABLE tags WHERE zettel_id = ?")
+                .bind(old.file_name().unwrap().to_str())
+                .bind(&id),
         )
         .await?;
         conn.execute(
-            sqlx::query_as::<_, Zettel>(
-                "DROP FROM TABLE full_text WHERE zettel_id = ? OR zettel_id = ?",
-            )
-            .bind(old.file_name().unwrap().to_str())
-            .bind(&maybe_id),
+            sqlx::query_as::<_, Zettel>("DROP FROM TABLE full_text WHERE zettel_id = ?")
+                .bind(old.file_name().unwrap().to_str())
+                .bind(&id),
         )
         .await?;
         Ok(())
@@ -409,5 +390,25 @@ pub mod query {
         Ok(sqlx::query_as::<_, Zettel>("SELECT z.zettel_id, title, file_path FROM tags t JOIN zettels z ON z.zettel_id = t.zettel_id WHERE tag LIKE ?;")
             .bind(format!("%{}%",text))
             .fetch_all( conn).await?)
+    }
+
+    pub async fn get_by_path(
+        conn: &mut SqliteConnection,
+        path: &str,
+    ) -> Result<Zettel, anyhow::Error> {
+        Ok(
+            sqlx::query_as::<_, Zettel>("SELECT zettel_id FROM zettels WHERE file_path = ?")
+                .bind(path)
+                .fetch_one(conn)
+                .await?,
+        )
+    }
+
+    pub async fn latest_zettel(conn: &mut SqliteConnection) -> Result<Zettel, anyhow::Error> {
+        Ok(
+            sqlx::query_as::<_, Zettel>("select * from zettels order by timestamp DESC limit 1;")
+                .fetch_one(conn)
+                .await?,
+        )
     }
 }

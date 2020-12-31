@@ -10,6 +10,9 @@ pub struct Opts {
     /// One of stdout, alfred, or json
     #[clap(default_value = "stdout")]
     pub format: OutFormat,
+    /// Before performing actions, find new wikis and add to the database
+    #[clap(long, short)]
+    pub calculate: bool,
     #[clap(subcommand)]
     pub subcmd: SubCommand,
 }
@@ -73,6 +76,10 @@ pub struct Update {
     /// List of files that needed to be updated in database
     #[clap(long, short)]
     pub paths: Vec<PathBuf>,
+    /// Figure out paths that need to be updated
+    /// **NOTE**: Must be used in conjunction with -a flag
+    #[clap(long, short)]
+    pub calculate: bool,
 }
 
 #[derive(Debug, Deserialize)]
