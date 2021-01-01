@@ -5,20 +5,14 @@ use crate::arguments::OutFormat;
 use crate::db::Zettel;
 
 use self::alfred::AlfredResults;
-use colored::*;
 
 pub fn execute(zettels: Vec<Zettel>, output_kind: &OutFormat) -> Result<(), anyhow::Error> {
     match output_kind {
         OutFormat::StdOut => {
             println!("{} results", zettels.len());
+            println!("Title,Path");
             for zettel in zettels {
-                println!(
-                    "{}: {}\n  {}:{}\n\n",
-                    "Title".red(),
-                    zettel.title,
-                    "Path".yellow(),
-                    zettel.file_path
-                );
+                println!("{},{}", zettel.title, zettel.file_path);
             }
         }
         OutFormat::JSON => println!("{}", to_string_pretty(&zettels)?),

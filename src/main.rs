@@ -98,48 +98,44 @@ async fn main() -> Result<(), anyhow::Error> {
             }
         }
         SubCommand::Create => return Ok(()),
-        SubCommand::Watch => loop {
-            // Create a channel to receive the events.
-            let (tx, rx) = channel();
-
-            // Create a watcher object, delivering debounced events.
-            // The notification back-end is selected based on the platform.
-            let mut watcher = watcher(tx, Duration::from_secs(10)).unwrap();
-
-            // Add a path to be watched. All files and directories at that path and
-            // below will be monitored for changes.
-            watcher
-                .watch(&config.wiki_location, RecursiveMode::Recursive)
-                .unwrap();
-
-            loop {
-                match rx.recv() {
-                    Ok(DebouncedEvent::Write(path))
-                        if path.extension() == Some(OsStr::new("md")) =>
-                    {
-                        edit::fill_n(&mut conn, &[path]).await?;
-                    }
-                    Ok(DebouncedEvent::NoticeWrite(path))
-                        if path.extension() == Some(OsStr::new("md")) =>
-                    {
-                        edit::fill_n(&mut conn, &[path]).await?;
-                    }
-                    Ok(DebouncedEvent::Remove(old))
-                        if old.extension() == Some(OsStr::new("md")) =>
-                    {
-                        edit::remove(&mut conn, &old).await?;
-                    }
-                    Ok(DebouncedEvent::Rename(old, new))
-                        if old.extension() == Some(OsStr::new("md")) =>
-                    {
-                        edit::namechange(&mut conn, &old, &new).await?;
-                    }
-                    Ok(event) => println!("{:?}", event),
-                    Err(e) => println!("watch error: {:?}", e),
-                }
-            }
-        },
+        SubCommand::Watch => {
+            watch(&mut conn, &config).await?;
+        }
     }
 
     Ok(())
+}
+
+async fn watch(mut conn: &mut SqliteConnection, config: &Config) -> Result<(), anyhow::Error> {
+    // Create a channel to receive the events.
+    let (tx, rx) = channel();
+
+    // Create a watcher object, delivering debounced events.
+    // The notification back-end is selected based on the platform.
+    let mut watcher = watcher(tx, Duration::from_secs(10)).unwrap();
+
+    // Add a path to be watched. All files and directories at that path and
+    // below will be monitored for changes.
+    watcher
+        .watch(&config.wiki_location, RecursiveMode::Recursive)
+        .unwrap();
+
+    loop {
+        match rx.recv() {
+            Ok(DebouncedEvent::Write(path)) if path.extension() == Some(OsStr::new("md")) => {
+                edit::fill_n(&mut conn, &[path]).await?;
+            }
+            Ok(DebouncedEvent::NoticeWrite(path)) if path.extension() == Some(OsStr::new("md")) => {
+                edit::fill_n(&mut conn, &[path]).await?;
+            }
+            Ok(DebouncedEvent::Remove(old)) if old.extension() == Some(OsStr::new("md")) => {
+                edit::remove(&mut conn, &old).await?;
+            }
+            Ok(DebouncedEvent::Rename(old, new)) if old.extension() == Some(OsStr::new("md")) => {
+                edit::namechange(&mut conn, &old, &new).await?;
+            }
+            Ok(event) => println!("{:?}", event),
+            Err(e) => println!("watch error: {:?}", e),
+        }
+    }
 }
