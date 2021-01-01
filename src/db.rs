@@ -33,6 +33,7 @@ pub mod edit {
         let dir_entries: Vec<_> = walkdir::WalkDir::new(config.wiki_location.as_path())
             .into_iter()
             .filter_map(|e| e.ok())
+            // Implicitly filters out directory entries
             .filter(|e| e.path().extension() == Some(OsStr::new("md")))
             .filter(|e| {
                 if let Some(after) = after {
@@ -367,7 +368,7 @@ pub mod query {
         conn: &mut SqliteConnection,
         text: &str,
     ) -> Result<Vec<Zettel>, anyhow::Error> {
-        Ok(sqlx::query_as::<_, Zettel>("SELECT z.zettel_id, title, timestamp, file_path FROM full_text ft JOIN zettels z ON z.zettel_id = ft.zettel_id WHERE full_text MATCH ?")
+        Ok(sqlx::query_as::<_, Zettel>("SELECT z.zettel_id, title, timestamp, file_path FROM full_text ft JOIN zettels z ON z.zettel_id = ft.zettel_id WHERE full_text MATCH ? ORDER BY rank;")
             .bind(text)
             .fetch_all( conn).await?)
     }
