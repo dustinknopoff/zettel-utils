@@ -271,20 +271,22 @@ PRAGMA WAL=on;",
             let ts: chrono::DateTime<Utc> = meta.created()?.into();
             ts.timestamp()
         };
+        let new_title = new.file_name().unwrap().to_str();
+        let old_title = old.file_name().unwrap().to_str();
         conn.execute(
             sqlx::query_as::<_, Zettel>(
                 "UPDATE zettels SET timestamp = ?, title = ? WHERE zettel_id = ?",
             )
             .bind(&new_timestamp)
-            .bind(new.file_name().unwrap().to_str())
-            .bind(old.file_name().unwrap().to_str())
+            .bind(new_title)
+            .bind(old_title)
             .bind(&id),
         )
         .await?;
         conn.execute(
             sqlx::query_as::<_, Zettel>("UPDATE full_text SET timestamp = ? WHERE zettel_id = ?")
                 .bind(&new_timestamp)
-                .bind(old.file_name().unwrap().to_str())
+                .bind(old_title)
                 .bind(&id),
         )
         .await?;
@@ -293,7 +295,7 @@ PRAGMA WAL=on;",
                 "UPDATE headers SET timestamp = ?, title = ? zettel_id = ?",
             )
             .bind(&new_timestamp)
-            .bind(new.file_name().unwrap().to_str())
+            .bind(new_title)
             .bind(&id),
         )
         .await?;
@@ -302,8 +304,8 @@ PRAGMA WAL=on;",
                 "UPDATE links SET timestamp = ?, title = ? WHERE zettel_id = ?",
             )
             .bind(&new_timestamp)
-            .bind(new.file_name().unwrap().to_str())
-            .bind(old.file_name().unwrap().to_str())
+            .bind(new_title)
+            .bind(old_title)
             .bind(&id),
         )
         .await?;
@@ -312,7 +314,7 @@ PRAGMA WAL=on;",
                 "UPDATE tags SET timestamp = ?, title = ? WHERE zettel_id = ?",
             )
             .bind(&new_timestamp)
-            .bind(new.file_name().unwrap().to_str())
+            .bind(new_title)
             .bind(&id),
         )
         .await?;
@@ -324,34 +326,34 @@ PRAGMA WAL=on;",
         let id = query::get_by_path(conn, old.to_str().unwrap())
             .await?
             .zettel_id;
+        let old_title = old.file_name().unwrap().to_str();
         conn.execute(
             sqlx::query_as::<_, Zettel>("DROP FROM TABLE zettels WHERE zettel_id = ? ")
-                .bind(old.file_name().unwrap().to_str())
+                .bind(old_title)
                 .bind(&id),
         )
         .await?;
         conn.execute(
             sqlx::query_as::<_, Zettel>("DROP FROM TABLE headers WHERE zettel_id = ?")
-                .bind(old.file_name().unwrap().to_str())
+                .bind(old_title)
                 .bind(&id),
         )
         .await?;
         conn.execute(
             sqlx::query_as::<_, Zettel>("DROP FROM TABLE links WHERE zettel_id = ?")
-                .bind(old.file_name().unwrap().to_str())
+                .bind(old_title)
                 .bind(&id),
         )
         .await?;
         conn.execute(
             sqlx::query_as::<_, Zettel>("DROP FROM TABLE tags WHERE zettel_id = ?")
-                .bind(old.file_name().unwrap().to_str())
+                .bind(old_title)
                 .bind(&id),
         )
         .await?;
         conn.execute(
             sqlx::query_as::<_, Zettel>("DROP FROM TABLE full_text WHERE zettel_id = ?")
-                .bind(old.file_name().unwrap().to_str())
-                .bind(&id),
+                .bind(old_title),
         )
         .await?;
         Ok(())

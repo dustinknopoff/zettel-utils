@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 use sqlx::{Connection, SqliteConnection};
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
@@ -33,10 +33,15 @@ static HEADERS_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
 async fn main() -> Result<(), anyhow::Error> {
     let opts = Opts::parse();
     let config: Config = {
-        if !Path::new("config.toml").exists() {
+        let config_path = if let Some(dir) = opts.config_dir {
+            PathBuf::from(dir).join("config.toml")
+        } else {
+            PathBuf::from("config.toml")
+        };
+        if !config_path.exists() {
             anyhow::bail!("config.toml not found")
         }
-        let contents = fs::read_to_string("config.toml")?;
+        let contents = fs::read_to_string(config_path)?;
         match toml::from_str(&contents) {
             Ok(config) => config,
             Err(_) => {

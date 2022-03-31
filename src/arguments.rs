@@ -13,6 +13,8 @@ pub struct Opts {
     /// Before performing actions, find new wikis and add to the database
     #[clap(long, short)]
     pub calculate: bool,
+    #[clap(long)]
+    pub config_dir: Option<String>,
     #[clap(subcommand)]
     pub subcmd: SubCommand,
 }
