@@ -1,10 +1,10 @@
-use clap::Clap;
+use clap::Parser;
 use serde::Deserialize;
 use std::fmt::Display;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 #[clap(version = "0.1", author = "Dustin Knopoff <rust@knopoff.dev>")]
 pub struct Opts {
     /// One of stdout, alfred, or json
@@ -17,7 +17,7 @@ pub struct Opts {
     pub subcmd: SubCommand,
 }
 
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 pub enum OutFormat {
     StdOut,
     Alfred,
@@ -47,7 +47,7 @@ impl FromStr for OutFormat {
     }
 }
 
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 pub enum SubCommand {
     /// Search all documents in your wiki
     FullText(Search),
@@ -63,12 +63,12 @@ pub enum SubCommand {
     Watch,
 }
 
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 pub struct Search {
     pub text: String,
 }
 
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 pub struct Update {
     /// Toggle to just UPSERT all wiki files
     #[clap(short, long)]

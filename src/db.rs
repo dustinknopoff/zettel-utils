@@ -23,6 +23,7 @@ pub mod edit {
     use super::*;
     use std::fs::{self, Metadata};
     use std::path::Path;
+    use uuid::Uuid;
     use walkdir::DirEntry;
     /// Walk [config.wiki_location](crate::arguments::Config) for markdown files and add metadata to database.
     pub async fn fill_db(
@@ -142,10 +143,7 @@ pub mod edit {
         let mut content = String::new();
         let mut file = File::open(&path)?;
         file.read_to_string(&mut content)?;
-        let zettel_id = blake3::hash(&content.as_bytes())
-            .to_hex()
-            .as_str()
-            .to_string();
+        let zettel_id = Uuid::new_v4().to_string();
         let tags = TAGS_REGEX
             .captures_iter(&content)
             .filter_map(|v| v.get(0))

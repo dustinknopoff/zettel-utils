@@ -1,4 +1,5 @@
 use arguments::{Config, Opts, SubCommand};
+use clap::StructOpt;
 use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use once_cell::sync::Lazy;
 use sqlx::{Connection, SqliteConnection};
@@ -28,12 +29,8 @@ static HEADERS_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
         .unwrap()
 });
 
-// TODO:
-// Move queries into lib functions
-
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    use clap::Clap;
     let opts = Opts::parse();
     let config: Config = {
         if !Path::new("config.toml").exists() {
@@ -106,7 +103,7 @@ async fn main() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-async fn watch(mut conn: &mut SqliteConnection, config: &Config) -> Result<(), anyhow::Error> {
+async fn watch(conn: &mut SqliteConnection, config: &Config) -> Result<(), anyhow::Error> {
     // Create a channel to receive the events.
     let (tx, rx) = channel();
 
@@ -123,16 +120,16 @@ async fn watch(mut conn: &mut SqliteConnection, config: &Config) -> Result<(), a
     loop {
         match rx.recv() {
             Ok(DebouncedEvent::Write(path)) if path.extension() == Some(OsStr::new("md")) => {
-                edit::fill_n(&mut conn, &[path]).await?;
+                edit::fill_n(conn, &[path]).await?;
             }
             Ok(DebouncedEvent::NoticeWrite(path)) if path.extension() == Some(OsStr::new("md")) => {
-                edit::fill_n(&mut conn, &[path]).await?;
+                edit::fill_n(conn, &[path]).await?;
             }
             Ok(DebouncedEvent::Remove(old)) if old.extension() == Some(OsStr::new("md")) => {
-                edit::remove(&mut conn, &old).await?;
+                edit::remove(conn, &old).await?;
             }
             Ok(DebouncedEvent::Rename(old, new)) if old.extension() == Some(OsStr::new("md")) => {
-                edit::namechange(&mut conn, &old, &new).await?;
+                edit::namechange(conn, &old, &new).await?;
             }
             Ok(event) => println!("{:?}", event),
             Err(e) => println!("watch error: {:?}", e),
